@@ -1,0 +1,20 @@
+{
+  "wants_refund": {
+    "type": "noul",
+    "instructions": "Is the customer asking for money back?"
+  },
+  "topic": {
+    "type": "choice",
+    "instructions": "What is the issue about?",
+    "criteria": {
+      "billing": "Payments, charges, refunds, invoices",
+      "technical": "Bugs, outages, integrations",
+      "other": "Anything else"
+    }
+  },
+  "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this?",
+    "criteria": ["Can wait a week", "This week", "Today"]
+  }
+}
