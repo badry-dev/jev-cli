@@ -15,6 +15,7 @@ def test_resolve_api_key_from_env(monkeypatch):
 def test_resolve_api_key_missing(monkeypatch, tmp_path):
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
     monkeypatch.delenv("JEV_API_KEY", raising=False)
+    # Point home at empty dir so file fallback misses
     monkeypatch.setenv("HOME", str(tmp_path))
     with pytest.raises(JevError):
         resolve_api_key()
