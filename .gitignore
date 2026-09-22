@@ -1,0 +1,36 @@
+# Secrets / local env — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+api_key
+**/api_key
+.typesafe/
+.config/jev/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Logs / local review output
+logs/
+*.log
+.jev/
