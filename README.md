@@ -3,8 +3,7 @@
 > **My unofficial CLI - not affiliated with or endorsed by TypeSafe.**
 > Bring your own TypeSafe API key; nothing here spends anyone else's credits.
 
-> I made this so I can use it mainly with the Jev router Grok bot: 
-`https://x.ai/bot/zlhrtju3wamiShqOcX3UI`
+I made this so I can use it mainly with the [Jev router](https://x.ai/bot/zlhrtju3wamiShqOcX3UI)  Grok bot. 
 
 Thin command-line client for **TypeSafe System One (Jev)**.
 
