@@ -1,7 +1,10 @@
 # jev-cli
 
-> **Unofficial community CLI — not affiliated with or endorsed by TypeSafe.**
+> **My unofficial CLI - not affiliated with or endorsed by TypeSafe.**
 > Bring your own TypeSafe API key; nothing here spends anyone else's credits.
+
+> I made this so I can use it mainly with the Jev router Grok bot: 
+`https://x.ai/bot/zlhrtju3wamiShqOcX3UI`
 
 Thin command-line client for **TypeSafe System One (Jev)**.
 
