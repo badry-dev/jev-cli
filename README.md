@@ -1,5 +1,8 @@
 # jev-cli
 
+> **Unofficial community CLI — not affiliated with or endorsed by TypeSafe.**
+> Bring your own TypeSafe API key; nothing here spends anyone else's credits.
+
 Thin command-line client for **TypeSafe System One (Jev)**.
 
 Calls the HTTP API directly (stdlib only — no SDK required). Secrets stay in
@@ -189,4 +192,5 @@ docs/                 # Notes for this project
 
 ## License
 
-MIT
+MIT. The vendored skill summary in `skills/typesafe-ai/` is © TypeSafe AI under
+its own MIT license (`skills/typesafe-ai/LICENSE`).
