@@ -158,6 +158,73 @@ Global flags go before the subcommand: `jev --no-retry ask …`.
 
 Requests send `User-Agent: jev-cli/<version>`.
 
+## Usage log (local)
+
+Every `jev ask` appends one JSON line to a local log, so you can see how often
+Jev is called, by whom, for what, at what cost, and how confident the answers were.
+
+| Setting | Default |
+| --- | --- |
+| Log path | `~/.local/share/jev/usage.jsonl` (override with `JEV_USAGE_LOG=/path/file.jsonl`) |
+| Disable for one call | `jev ask --no-log …` |
+| Disable everywhere | `JEV_NO_LOG=1` |
+
+Missing directories are created. If the log can't be written, `jev ask` prints a
+warning on stderr and still returns the answer. Failed calls are logged too
+(`status` is the HTTP code, `network_error`, or `validation_error`).
+
+Tag each call so the log is useful (all optional):
+
+```bash
+jev ask -r request.json \
+  --caller "Max Grok" \
+  --purpose "Gate the weekly plan before writing memory" \
+  --pattern confidence_gate+intent_routing
+```
+
+`--pattern` is one of `intent_routing`, `confidence_gate`, `urgency`, `guardrail`,
+`harness`, `other`; join several with `+`. Unknown names warn but are logged as given.
+
+The same fields can live in a top-level `_meta` object in a `--request` file.
+`_meta` is stripped before the request is sent, and flags win over it:
+
+```json
+{
+  "_meta": {"caller": "Max Grok", "purpose": "Pick tonight's draft", "pattern": "intent_routing"},
+  "model": "jev-1.13.0",
+  "state": "…",
+  "questions": {"…": {}}
+}
+```
+
+### Privacy: what a log line contains
+
+`ts` (ISO 8601 with offset), `caller`, `purpose`, `pattern`, `model_requested`,
+`model_answered`, `status`, `input_tokens`, `output_tokens`, `est_cost_usd`
+(input × $0.042 / 1M), `latency_ms`, `retries`, `questions` (id, type and option
+count only), `answers` (choice + confidence, score + confidence, or noul `p`), and
+`request_sha256` (SHA-256 of the canonical request body, to spot repeats).
+
+It **never** contains the API key, any header, the `state`, or question /
+criteria text. `purpose` is whatever you pass, so keep secrets out of it.
+The log stays on your machine; nothing is uploaded.
+
+### `jev usage`
+
+```bash
+jev usage                 # last 7 days
+jev usage --days 14
+jev usage --since 2026-10-01
+jev usage --json          # machine-readable summary
+jev usage --low 0.6       # change the low-confidence threshold (default 0.5)
+```
+
+Prints calls (ok vs errors), tokens, estimated cost, retries, average latency,
+and breakdowns by caller, pattern and day, plus average / minimum answer
+confidence and every answer below the threshold. Choice and score answers use
+the API's `confidence`; noul answers use `|2p − 1|`. Calls without `--purpose`
+are counted so you can spot untagged usage. `jev usage` needs no API key.
+
 ## Account balance
 
 The API has no balance, credits, or usage endpoint (only `POST /v1/systemone` and
@@ -185,7 +252,7 @@ See `skills/typesafe-ai/SKILL.md` and https://docs.typesafe.ai/llms.txt.
 ## Repo layout
 
 ```
-src/jev_cli/          # CLI, HTTP client (retries), validation/cost helpers
+src/jev_cli/          # CLI, HTTP client (retries), validation/cost helpers, usage log
 tests/                # unittest suite (no network)
 examples/             # Sample requests (no secrets)
 skills/typesafe-ai/   # TypeSafe agent skill (vendored)

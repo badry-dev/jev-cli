@@ -228,6 +228,12 @@ class RetryLoopTests(unittest.TestCase):
 
 
 class CliValidationTests(unittest.TestCase):
+    def setUp(self):
+        # Keep CLI tests from touching the real usage log.
+        patcher = mock.patch.dict("os.environ", {"JEV_NO_LOG": "1"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_invalid_request_exits_nonzero_without_network(self):
         from jev_cli import cli
 
