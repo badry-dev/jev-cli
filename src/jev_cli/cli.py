@@ -11,10 +11,12 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
 from jev_cli import __version__
+from jev_cli import usage as usage_log
 from jev_cli.client import DEFAULT_BASE_URL, DEFAULT_MODEL, JevClient, JevError, RetryPolicy
 from jev_cli.validation import (
     PRICE_PER_MTOK_INPUT_USD,
@@ -143,11 +145,36 @@ def _summarize(args: argparse.Namespace, result: Any, attempts: int) -> dict[str
     return meta
 
 
+def _ask_meta(args: argparse.Namespace, file_meta: Any) -> dict[str, Any]:
+    """caller/purpose/pattern: CLI flags win over the request file's top-level _meta."""
+    fm = file_meta if isinstance(file_meta, dict) else {}
+    if file_meta is not None and not isinstance(file_meta, dict):
+        _warn("_meta in the request file is not an object; ignoring it")
+    meta = {
+        "caller": args.caller if args.caller is not None else fm.get("caller"),
+        "purpose": args.purpose if args.purpose is not None else fm.get("purpose"),
+        "pattern": usage_log.normalize_pattern(args.pattern if args.pattern is not None else fm.get("pattern")),
+    }
+    for k in ("caller", "purpose"):
+        if meta[k] is not None:
+            meta[k] = str(meta[k]).strip() or None
+    unknown = usage_log.unknown_patterns(meta["pattern"])
+    if unknown:
+        _warn(
+            f"unknown pattern(s) {unknown}; expected one of {', '.join(usage_log.KNOWN_PATTERNS)} "
+            "(logged as given)"
+        )
+    return meta
+
+
 def cmd_ask(args: argparse.Namespace) -> int:
+    file_meta: Any = None
     if args.request:
         request = _load_json_arg(args.request)
         if not isinstance(request, dict):
             raise JevError("--request must be a JSON object")
+        # _meta is local bookkeeping for the usage log; it is never sent to the API.
+        file_meta = request.get("_meta")
         state = request.get("state")
         questions = request.get("questions")
         # An explicit --model overrides the file; otherwise the file's model, then the default.
@@ -161,6 +188,21 @@ def cmd_ask(args: argparse.Namespace) -> int:
         questions = _load_json_arg(args.questions)
         model = args.model or DEFAULT_MODEL
 
+    meta = _ask_meta(args, file_meta)
+    do_log = not usage_log.logging_disabled(args.no_log)
+
+    def log(**kw: Any) -> None:
+        if not do_log:
+            return
+        entry = usage_log.build_entry(
+            caller=meta["caller"],
+            purpose=meta["purpose"],
+            pattern=meta["pattern"],
+            model_requested=model,
+            **kw,
+        )
+        usage_log.append_entry(entry, usage_log.log_path())
+
     if args.skip_validation:
         if not isinstance(questions, dict):
             raise JevError("questions must be a JSON object map")
@@ -168,6 +210,14 @@ def cmd_ask(args: argparse.Namespace) -> int:
         try:
             questions = validate_request(state, questions)
         except ValidationError as e:
+            log(
+                payload={"model": model, "state": state, "questions": questions},
+                questions=questions,
+                status="validation_error",
+                latency_ms=0,
+                retries=0,
+                error="; ".join(e.problems),
+            )
             raise JevError(
                 "Request failed pre-send validation (nothing was sent)",
                 body={"problems": e.problems},
@@ -176,13 +226,56 @@ def cmd_ask(args: argparse.Namespace) -> int:
     for w in size_warnings(state, questions):
         _warn(w)
 
+    payload = {"model": model, "state": state, "questions": questions}
     client = _client(args)
-    result = client.evaluate(state=state, questions=questions, model=model)
-    meta = _summarize(args, result, client.last_attempts)
+    t0 = time.monotonic()
+    try:
+        result = client.evaluate(state=state, questions=questions, model=model)
+    except JevError as e:
+        attempts = e.attempts or client.last_attempts or 1
+        log(
+            payload=payload,
+            questions=questions,
+            status=e.status if e.status is not None else "network_error",
+            latency_ms=round((time.monotonic() - t0) * 1000),
+            retries=max(0, attempts - 1),
+            error=str(e),
+        )
+        raise
+    latency_ms = round((time.monotonic() - t0) * 1000)
+    log(
+        payload=payload,
+        questions=questions,
+        result=result,
+        status="ok",
+        latency_ms=latency_ms,
+        retries=max(0, client.last_attempts - 1),
+    )
+    meta_out = _summarize(args, result, client.last_attempts)
     if args.annotate and isinstance(result, dict):
         result = dict(result)
-        result["_jev"] = meta
+        result["_jev"] = meta_out
     _print_json(result, compact=args.compact)
+    return 0
+
+
+def cmd_usage(args: argparse.Namespace) -> int:
+    if args.days is not None and args.days < 0:
+        raise JevError("--days must be >= 0")
+    try:
+        start = usage_log.since_from(args.since, args.days)
+    except ValueError:
+        raise JevError("--since must be YYYY-MM-DD")
+    path = usage_log.log_path(args.log)
+    entries, bad = usage_log.read_entries(path)
+    if bad:
+        _warn(f"skipped {bad} unreadable line(s) in {path}")
+    summary = usage_log.summarize(entries, start=start, low_threshold=args.low)
+    summary["log_path"] = str(path)
+    if args.json:
+        _print_json(summary, compact=args.compact)
+    else:
+        print(usage_log.format_summary(summary, path))
     return 0
 
 
@@ -278,7 +371,33 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Send without local pre-send validation",
     )
+    ask.add_argument("--caller", default=None, help='Who is asking, for the usage log (e.g. "Max Grok")')
+    ask.add_argument("--purpose", default=None, help="Short case description, for the usage log")
+    ask.add_argument(
+        "--pattern",
+        default=None,
+        help="Usage pattern for the log: " + ", ".join(usage_log.KNOWN_PATTERNS) + " (combine with '+')",
+    )
+    ask.add_argument(
+        "--no-log",
+        action="store_true",
+        help="Do not append this call to the usage log (env JEV_NO_LOG=1)",
+    )
     ask.set_defaults(func=cmd_ask)
+
+    us = sub.add_parser("usage", help="Summarize the local usage log (calls, cost, confidence)")
+    grp = us.add_mutually_exclusive_group()
+    grp.add_argument("--since", default=None, help="Start date YYYY-MM-DD (local midnight)")
+    grp.add_argument("--days", type=int, default=None, help="Look back N days from now (default: 7)")
+    us.add_argument("--json", action="store_true", help="Print the summary as JSON")
+    us.add_argument("--log", default=None, help="Log path (default: $JEV_USAGE_LOG or ~/.local/share/jev/usage.jsonl)")
+    us.add_argument(
+        "--low",
+        type=float,
+        default=usage_log.LOW_CONFIDENCE,
+        help="Low-confidence threshold (default: 0.5)",
+    )
+    us.set_defaults(func=cmd_usage)
 
     ver = sub.add_parser("version", help="Print package version")
     ver.set_defaults(func=cmd_version)
